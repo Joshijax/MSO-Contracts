@@ -550,6 +550,84 @@
 			{
 				"inputs": [
 					{
+						"internalType": "address",
+						"name": "operator",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "from",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256[]",
+						"name": "originalTokenIds",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "uint256[]",
+						"name": "amounts",
+						"type": "uint256[]"
+					},
+					{
+						"internalType": "bytes",
+						"name": "",
+						"type": "bytes"
+					}
+				],
+				"name": "onERC1155BatchReceived",
+				"outputs": [
+					{
+						"internalType": "bytes4",
+						"name": "",
+						"type": "bytes4"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "operator",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "from",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "originalTokenId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "bytes",
+						"name": "",
+						"type": "bytes"
+					}
+				],
+				"name": "onERC1155Received",
+				"outputs": [
+					{
+						"internalType": "bytes4",
+						"name": "",
+						"type": "bytes4"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
 						"internalType": "uint256",
 						"name": "assetId",
 						"type": "uint256"
@@ -737,6 +815,65 @@
 					}
 				],
 				"name": "transferFrom",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "originalTokenId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "unwrapERC1155",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "unwrapERC20",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "originalTokenId",
+						"type": "uint256"
+					}
+				],
+				"name": "unwrapERC721",
 				"outputs": [],
 				"stateMutability": "nonpayable",
 				"type": "function"
@@ -950,6 +1087,24 @@
 						"sender": "The address of the sender."
 					}
 				},
+				"unwrapERC1155(address,uint256,uint256)": {
+					"params": {
+						"originalTokenId": "The NFT id to be unwrapped from the contract.",
+						"token": "The NFT contract."
+					}
+				},
+				"unwrapERC20(address,uint256)": {
+					"params": {
+						"amount": "The amount of tokens to be unwrapped",
+						"token": "The NFT contract."
+					}
+				},
+				"unwrapERC721(address,uint256)": {
+					"params": {
+						"originalTokenId": "The NFT id to be unwrapped from the contract.",
+						"token": "The NFT contract."
+					}
+				},
 				"wrapERC1155(address,uint256,uint256)": {
 					"params": {
 						"originalTokenId": "The NFT id to be wrapped from the contract.",
@@ -1033,6 +1188,15 @@
 				"transferFrom(address,address,uint256,uint256)": {
 					"notice": "Transfers an amount of an id from a sender to a receiver."
 				},
+				"unwrapERC1155(address,uint256,uint256)": {
+					"notice": "unwraps an ERC721 token."
+				},
+				"unwrapERC20(address,uint256)": {
+					"notice": "Unwraps an ERC20 token."
+				},
+				"unwrapERC721(address,uint256)": {
+					"notice": "unwraps an ERC721 token."
+				},
 				"wrapERC1155(address,uint256,uint256)": {
 					"notice": "Wraps an ERC1155 token."
 				},
@@ -1070,12 +1234,28 @@
 				"dweb:/ipfs/QmWASYTrZPF2MrcpC3EBmxx6RgtZ5Fr4jwrsmB7ZF7qhDC"
 			]
 		},
+		"@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol": {
+			"keccak256": "0xb69597a63b202e28401128bed6a6d259e8730191274471af7303eafb247881a3",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://25addbda49a578b3318130585601344c5149a5549d749adf88e9685349a46b23",
+				"dweb:/ipfs/Qme2DuD8gpsve1ZvaSMQpBwMdpU7yAtekDwr7gUp8dX4zX"
+			]
+		},
 		"@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol": {
 			"keccak256": "0xe92b5e199b963d108ad6e06feeede151ba23849e0d064956535489ff967ffe68",
 			"license": "MIT",
 			"urls": [
 				"bzz-raw://280e17738a67b06dae02fec32982bd48a8ab71d8df95e9975ae03532634bc522",
 				"dweb:/ipfs/QmecjsNcFgy2mMjuNfRDkLpAYMRWnh5o73fw1Bj2rCso2z"
+			]
+		},
+		"@openzeppelin/contracts/token/ERC1155/utils/ERC1155Receiver.sol": {
+			"keccak256": "0x3dd5e1a66a56f30302108a1da97d677a42b1daa60e503696b2bcbbf3e4c95bcb",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://0808de0ae4918c664643c885ca7fa6503e8ef2bd75609dfc85152c0128a3422d",
+				"dweb:/ipfs/QmNrhFC1XgBKuuxfahFeiwi1MCdu3FLNpHj2uStgmf4iJj"
 			]
 		},
 		"@openzeppelin/contracts/token/ERC20/IERC20.sol": {
@@ -1110,6 +1290,14 @@
 				"dweb:/ipfs/Qmbwp8VDerjS5SV1quwHH1oMXxPQ93fzfLVqJ2RCqbowGE"
 			]
 		},
+		"@openzeppelin/contracts/utils/introspection/ERC165.sol": {
+			"keccak256": "0x9e8778b14317ba9e256c30a76fd6c32b960af621987f56069e1e819c77c6a133",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://1777404f1dcd0fac188e55a288724ec3c67b45288e49cc64723e95e702b49ab8",
+				"dweb:/ipfs/QmZFdC626GButBApwDUvvTnUzdinevC3B24d7yyh57XkiA"
+			]
+		},
 		"@openzeppelin/contracts/utils/introspection/IERC165.sol": {
 			"keccak256": "0x4296879f55019b23e135000eb36896057e7101fb7fb859c5ef690cf14643757b",
 			"license": "MIT",
@@ -1135,11 +1323,11 @@
 			]
 		},
 		"contracts/UniversalTokenContract.sol": {
-			"keccak256": "0x211a7220828fb7dfa937ae6d5e5ec79f2002135efa2ac49735dcedcf5c982922",
+			"keccak256": "0xa1a2a5597eec0282d6445f72a0d853a1cd0256890f71b9623790f9da9c2626ac",
 			"license": "MIT",
 			"urls": [
-				"bzz-raw://4b53e66da1b24e874f5635175b76d6ae7e23f2e26c3037377068931d87f213c8",
-				"dweb:/ipfs/QmT8ZcGnSyznT3nP2CZFuq8cebuAynw6VbmrZhrmUZK15K"
+				"bzz-raw://f2fd48ef0b0ac3f5831bae5080668cac892cbeb6420240372d7a564f195f2d6c",
+				"dweb:/ipfs/QmSL39VsudK7TLD5sd5RcqXNDiN96W6bP7kD4D5LwX8EyM"
 			]
 		}
 	},

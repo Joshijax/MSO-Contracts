@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol";
+import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Receiver.sol";
 import "./ERC6909.sol";
 
 enum AssetType {
@@ -22,7 +23,7 @@ struct AssetMetadata {
 }
 
 
-contract UTC is ERC6909 {
+contract UTC is ERC6909, IERC1155Receiver {
     error ERC20TransferFailed(address token, uint256 amount);
     
     event FungibleAssetCreated(string indexed name, string indexed symbol, uint indexed assetTip, uint totalSupply);
@@ -141,8 +142,9 @@ contract UTC is ERC6909 {
         assetMetadatas[assetId] = AssetMetadata("", "", AssetType.ERC1155);
         tokenURI[assetId] = IERC1155MetadataURI(token).uri(originalTokenId);
         ownerOf[assetId] = msg.sender;
-        IERC721Metadata(token).transferFrom(msg.sender, address(this), originalTokenId);
+        IERC1155MetadataURI(token).safeTransferFrom(msg.sender, address(this), originalTokenId, amount, "");
     }
+
 
     /// @notice Wraps an ERC20 token.
     /// @param token The NFT contract.
@@ -154,9 +156,43 @@ contract UTC is ERC6909 {
         balanceOf[msg.sender][assetId] += amount;
         totalSupply[assetId]+=amount;
         assetMetadatas[assetId] = AssetMetadata(name, symbol, AssetType.ERC20);
+        if (!IERC20Metadata(token).transferFrom(msg.sender, address(this), amount)) {
+            revert ERC20TransferFailed(token, amount);
+        }
+    }
+
+    /// @notice Unwraps an ERC20 token.
+    /// @param token The NFT contract.
+    /// @param amount The amount of tokens to be unwrapped
+    function unwrapERC20(address token, uint amount) public {
+        uint256 assetId = uint256(uint160(token));
+        balanceOf[msg.sender][assetId] -= amount;
+        totalSupply[assetId]-=amount;
         if (!IERC20Metadata(token).transfer(msg.sender, amount)) {
             revert ERC20TransferFailed(token, amount);
         }
+    }
+    
+    /// @notice unwraps an ERC721 token.
+    /// @param token The NFT contract.
+    /// @param originalTokenId The NFT id to be unwrapped from the contract.
+    function unwrapERC721(address token, uint originalTokenId) public {
+        uint assetId = uint256(keccak256(abi.encodePacked(token, originalTokenId)));
+        balanceOf[msg.sender][assetId] -= 1;
+        totalSupply[assetId]-=1;
+        ownerOf[assetId] = address(0);
+        IERC721Metadata(token).transferFrom(address(this), msg.sender, originalTokenId);
+    }
+
+    /// @notice unwraps an ERC721 token.
+    /// @param token The NFT contract.
+    /// @param originalTokenId The NFT id to be unwrapped from the contract.
+    function unwrapERC1155(address token, uint originalTokenId, uint amount) public {
+        uint assetId = uint256(keccak256(abi.encodePacked(token, originalTokenId)));
+        balanceOf[msg.sender][assetId] -= amount;
+        totalSupply[assetId]-=amount;
+        ownerOf[assetId] = address(0);
+        IERC1155MetadataURI(token).safeTransferFrom(address(this), msg.sender, originalTokenId, amount, "");
     }
 
     //view fn(s)
@@ -183,5 +219,37 @@ contract UTC is ERC6909 {
         tokenURI[assetId] = tokenURI_;
         ownerOf[assetId] = to;
         emit NonFungibleAssetMinted(assetTip, assetId);
+    }
+
+
+
+
+
+
+    function onERC1155Received(address operator, address from, uint256 originalTokenId, uint256 amount, bytes calldata)
+        public
+        returns (bytes4)
+    {
+        if (operator != address(this)) {
+            wrapERC1155(from, originalTokenId, amount);
+        }
+
+        return IERC1155Receiver.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] calldata originalTokenIds,
+        uint256[] calldata amounts,
+        bytes calldata
+    ) public returns (bytes4) {
+        if (operator != address(this)) {
+            for (uint256 i; i < originalTokenIds.length; ++i) {
+                wrapERC1155(from, originalTokenIds[i], amounts[i]);
+            }
+        }
+
+        return IERC1155Receiver.onERC1155BatchReceived.selector;
     }
 }
