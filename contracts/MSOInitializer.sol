@@ -27,6 +27,7 @@ contract MSOInitializer is Events {
         bytes32 _s,
         uint8 _v
     ) public {
+        require(deployedMSO[_vaultProxy] == address(0), "MSO has already been initialized");
         bytes32 hash = keccak256(abi.encodePacked(MSOServer, _vaultOwner, _vaultProxy));
         address signer = ecrecover(hash, _v, _r, _s);
 

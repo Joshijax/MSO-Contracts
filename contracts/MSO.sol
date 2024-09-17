@@ -39,6 +39,16 @@ abstract contract MSO is Events, StructsAndEnums {
 
     mapping(address => Balance) staked;
 
+    modifier onlyMSOServer() {
+        require(msg.sender == getProcessingServer(), "Not the owner");
+        _;
+    }
+
+    modifier onlySelf() {
+        require(msg.sender == address(this), "Must be called by self");
+        _;
+    }
+
     constructor(
         address _vaultProxy,
         address _vaultOwner,
@@ -133,7 +143,8 @@ abstract contract MSO is Events, StructsAndEnums {
 
     function launchMSO(
         address _MSOServer,
-        bytes memory _data,
+        SyntheticTokenConfig memory _tokenConfig,
+        INonfungiblePositionManager.MintParams memory _params,
         bytes32 _r,
         bytes32 _s,
         uint8 _v
@@ -142,22 +153,20 @@ abstract contract MSO is Events, StructsAndEnums {
             _MSOServer == getProcessingServer(),
             "Must be signed by processing server"
         );
-        bytes32 hash = keccak256(abi.encodePacked(_MSOServer, _data));
+        bytes32 hash = keccak256(abi.encode(_MSOServer, _tokenConfig, _params));
         address signer = ecrecover(hash, _v, _r, _s);
 
         require(signer == _MSOServer, "Invalid inputs");
         require(vaultOwner == msg.sender, "Only vault owner can launch mso");
-        (bool success, ) = address(this).call(_data);
-        require(success);
+        _launchMSO(_tokenConfig, _params);
     }
 
     function _launchMSO(
         SyntheticTokenConfig memory _tokenConfig,
         INonfungiblePositionManager.MintParams memory _params
-    ) public {
+    ) internal {
         require(msoStage == MSOStage.INIT, "MSO stage error");
         require(balance.usdc >= cap.soft, "Soft cap has not been reached");
-        require(msg.sender == address(this), "Must be called by self");
 
         SyntheticToken token = new SyntheticToken(
             address(this),
@@ -178,7 +187,8 @@ abstract contract MSO is Events, StructsAndEnums {
             _params.amount1Desired
         );
 
-        (uint tokenId, , uint synthAmount, uint usdcAmount) = positionManager.mint(_params);
+        (uint tokenId, , uint synthAmount, uint usdcAmount) = positionManager
+            .mint(_params);
         positionTokenId = tokenId;
         liquidityBalance.synth = synthAmount;
         liquidityBalance.usdc = usdcAmount;

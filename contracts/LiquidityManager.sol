@@ -13,35 +13,11 @@ import "./libraries/StructsAndEnums.sol";
 import "./MSO.sol";
 
 abstract contract LiquidityManager is MSO, IERC721Receiver {
-    
 
-    modifier onlyMSOServer() {
-        require(msg.sender == getProcessingServer(), "Not the owner");
-        _;
-    }
-
-    modifier onlySelf {
-        require(msg.sender == address(this));
-        _;
-    }
-
-    function _mintPosition(
-        INonfungiblePositionManager.MintParams memory _params
-    )
-        private
-        returns (
-            uint256 tokenId,
-            uint128 liquidity,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
-        
-    }
 
     function _increaseLiquidity(
        INonfungiblePositionManager.IncreaseLiquidityParams memory _params
-    ) private {
+    ) internal {
         TransferHelper.safeApprove(
             usdcAddress,
             address(positionManager),
@@ -57,11 +33,11 @@ abstract contract LiquidityManager is MSO, IERC721Receiver {
     }
 
 
-    function _decreaseLiquidity(INonfungiblePositionManager.DecreaseLiquidityParams memory _params) private returns(uint usdcAmount, uint synthAmount) {
+    function _decreaseLiquidity(INonfungiblePositionManager.DecreaseLiquidityParams memory _params) internal returns(uint usdcAmount, uint synthAmount) {
         (usdcAmount, synthAmount) = positionManager.decreaseLiquidity(_params);
     }
 
-    function _collectFees() private returns(INonfungiblePositionManager.CollectParams memory _params) {
+    function _collectFees() internal returns(INonfungiblePositionManager.CollectParams memory _params) {
         positionManager.collect(_params);
     }
 
@@ -86,7 +62,7 @@ abstract contract LiquidityManager is MSO, IERC721Receiver {
         return positionManager.positions(positionTokenId);
     }
 
-    function _swapExactInputSingle(ISwapRouter.ExactInputSingleParams memory _params) private returns (uint256 amountOut) {
+    function _swapExactInputSingle(ISwapRouter.ExactInputSingleParams memory _params) internal returns (uint256 amountOut) {
         TransferHelper.safeApprove(_params.tokenIn, address(swapRouter), _params.amountIn);
         // The call to `exactInputSingle` executes the swap.
         amountOut = swapRouter.exactInputSingle(_params);
@@ -101,5 +77,4 @@ abstract contract LiquidityManager is MSO, IERC721Receiver {
         positionTokenId = tokenId;
         return this.onERC721Received.selector;
     }
-    //------------------- Internal functions -------------------//
 }
