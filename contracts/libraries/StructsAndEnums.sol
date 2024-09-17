@@ -23,4 +23,14 @@ abstract contract StructsAndEnums {
         address token0;
         address token1;
     }
+
+    struct SyntheticTokenConfig {
+        string name;
+        string symbol;
+    }
+
+    struct InLiquidity {
+        uint usdc;
+        uint synth;
+    }
 }

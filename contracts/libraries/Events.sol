@@ -16,9 +16,10 @@ abstract contract Events {
     );
 
     event MSOLaunched(
-        address indexed vaultProxy,
+        address indexed MSOAddress,
         address indexed tsAddress,
-        address indexed synthTokenAddress
+        address indexed synthTokenAddress,
+        uint usdcAmount
     );
 
     event MSOInitialized(address indexed vaultOwner, address indexed vaultProxy);

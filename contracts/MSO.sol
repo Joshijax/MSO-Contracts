@@ -1,26 +1,41 @@
 //SPDX-License-Identifier: MIT
 pragma solidity =0.7.6;
+pragma abicoder v2;
 
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./SyntheticToken.sol";
 import "./libraries/StructsAndEnums.sol";
 import "./libraries/Events.sol";
+import "./MSOInitializer.sol";
 
 abstract contract MSO is Events, StructsAndEnums {
     address public vaultProxy;
     address public vaultOwner;
     address public tsAddress;
     address public usdcAddress;
-    address public MSOServer;
     address public synthAddress;
+    address public MSOInitializerAddress;
+
+    INonfungiblePositionManager public positionManager;
+    ISwapRouter public swapRouter;
+
+    Deposit public deposit;
 
     Cap public cap;
     Balance public balance;
+    InLiquidity public liquidityBalance;
     MSOStage public msoStage;
 
     uint public minFactor;
     uint public maxFactor;
     uint public minTokenShares;
+    uint public positionTokenId;
 
     mapping(address => Balance) staked;
 
@@ -29,6 +44,8 @@ abstract contract MSO is Events, StructsAndEnums {
         address _vaultOwner,
         address _tsAddress,
         address _usdcAddress,
+        address _positionManager,
+        address _swapRouter,
         uint _minfactor,
         uint _maxFactor,
         uint _minTokenShares,
@@ -44,6 +61,9 @@ abstract contract MSO is Events, StructsAndEnums {
         minTokenShares = _minTokenShares;
         cap.soft = _softcap;
         cap.hard = _hardcap;
+
+        positionManager = INonfungiblePositionManager(_positionManager);
+        swapRouter = ISwapRouter(_swapRouter);
     }
 
     function stake(uint _tsAmount, uint _usdcAmount) public {
@@ -91,18 +111,24 @@ abstract contract MSO is Events, StructsAndEnums {
         uint usdcBalance = staked[msg.sender].usdc;
         uint tsBalance = staked[msg.sender].ts;
         require(
-            IERC20(usdcAddress).transferFrom(address(this), msg.sender, usdcBalance),
+            IERC20(usdcAddress).transferFrom(
+                address(this),
+                msg.sender,
+                usdcBalance
+            ),
             "USDC tranfer failed"
         );
         require(
-            IERC20(tsAddress).transferFrom(address(this), msg.sender, tsBalance),
+            IERC20(tsAddress).transferFrom(
+                address(this),
+                msg.sender,
+                tsBalance
+            ),
             "USDC tranfer failed"
         );
 
         balance.usdc -= usdcBalance;
         balance.ts -= tsBalance;
-
-
     }
 
     function launchMSO(
@@ -112,7 +138,10 @@ abstract contract MSO is Events, StructsAndEnums {
         bytes32 _s,
         uint8 _v
     ) public {
-        // require(_MSOServer == MSOServer, "Must be called by MSO server EOA");
+        require(
+            _MSOServer == getProcessingServer(),
+            "Must be signed by processing server"
+        );
         bytes32 hash = keccak256(abi.encodePacked(_MSOServer, _data));
         address signer = ecrecover(hash, _v, _r, _s);
 
@@ -122,17 +151,39 @@ abstract contract MSO is Events, StructsAndEnums {
         require(success);
     }
 
-    function _launchMSO(uint _synthTokenAmount, string memory _tokenName, string memory _tokenSymbol) public {
+    function _launchMSO(
+        SyntheticTokenConfig memory _tokenConfig,
+        INonfungiblePositionManager.MintParams memory _params
+    ) public {
         require(msoStage == MSOStage.INIT, "MSO stage error");
         require(balance.usdc >= cap.soft, "Soft cap has not been reached");
         require(msg.sender == address(this), "Must be called by self");
 
-        SyntheticToken token = new SyntheticToken(address(this), _tokenName, _tokenSymbol);
-        token.mint(address(this), _synthTokenAmount);
+        SyntheticToken token = new SyntheticToken(
+            address(this),
+            _tokenConfig.name,
+            _tokenConfig.symbol
+        );
+        token.mint(address(this), _params.amount1Desired);
 
         //-------------------- Mint a position on uniswap --------------------//
+        TransferHelper.safeApprove(
+            usdcAddress,
+            address(positionManager),
+            _params.amount0Desired
+        );
+        TransferHelper.safeApprove(
+            synthAddress,
+            address(positionManager),
+            _params.amount1Desired
+        );
 
-        emit MSOLaunched(vaultProxy, tsAddress, address(token));
+        (uint tokenId, , uint synthAmount, uint usdcAmount) = positionManager.mint(_params);
+        positionTokenId = tokenId;
+        liquidityBalance.synth = synthAmount;
+        liquidityBalance.usdc = usdcAmount;
+
+        emit MSOLaunched(address(this), tsAddress, address(token), usdcAmount);
     }
 
     function cancelMSO() public {
@@ -144,10 +195,15 @@ abstract contract MSO is Events, StructsAndEnums {
     }
 
     function reInitializeMSO() public {
-        require(vaultOwner == msg.sender, "Only vault owner can initialize MSO");
+        require(
+            vaultOwner == msg.sender,
+            "Only vault owner can initialize MSO"
+        );
         msoStage = MSOStage.INIT;
         emit MSOInitialized(vaultOwner, vaultProxy);
     }
 
-    
+    function getProcessingServer() public view returns (address) {
+        return MSOInitializer(MSOInitializerAddress).getProcessingServer();
+    }
 }

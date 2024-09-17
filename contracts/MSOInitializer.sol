@@ -4,6 +4,7 @@ import "./libraries/Events.sol";
 
 contract MSOInitializer is Events {
     address MSOServer;
+    mapping(address => address) public deployedMSO;
 
     modifier onlyMSOServer() {
         require(MSOServer == msg.sender);
@@ -41,11 +42,15 @@ contract MSOInitializer is Events {
         address _vaultProxy
     ) public onlySelf {
         // -------- Depoly MSO ---------//
+        deployedMSO[_vaultProxy] = address(0);
         emit MSOInitialized(_vaultOwner, _vaultProxy);
     }
 
     function updateMSOServer(address _newServerAddress) public onlyMSOServer {
-        // Remove this
         MSOServer = _newServerAddress;
+    }
+
+    function getProcessingServer() external view returns(address) {
+        return MSOServer;
     }
 }
