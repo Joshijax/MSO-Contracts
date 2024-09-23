@@ -22,5 +22,5 @@ abstract contract Events {
         uint usdcAmount
     );
 
-    event MSOInitialized(address indexed vaultOwner, address indexed vaultProxy);
+    event MSOInitialized(address indexed vaultOwner, address indexed vaultProxy, address indexed MSOAddress);
 }

@@ -10,9 +10,8 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./libraries/StructsAndEnums.sol";
-import "./MSO.sol";
 
-abstract contract LiquidityManager is MSO, IERC721Receiver {
+contract MSOLiquidityManager {
     function _increaseLiquidity(
         INonfungiblePositionManager.IncreaseLiquidityParams memory _params
     ) internal {
@@ -96,15 +95,5 @@ abstract contract LiquidityManager is MSO, IERC721Receiver {
         if (amountIn < _params.amountInMaximum) {
             TransferHelper.safeApprove(_params.tokenIn, address(swapRouter), 0);
         }
-    }
-
-    function onERC721Received(
-        address operator,
-        address,
-        uint256 tokenId,
-        bytes calldata
-    ) external override returns (bytes4) {
-        positionTokenId = tokenId;
-        return this.onERC721Received.selector;
     }
 }

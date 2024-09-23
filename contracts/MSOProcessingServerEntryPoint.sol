@@ -5,13 +5,13 @@ pragma abicoder v2;
 import "./LiquidityManager.sol";
 
 abstract contract MSOProcessingServerEntryPoint is LiquidityManager  {
-    function liquidityOperationsEnteryPoint(bytes[] memory _operations) public {
-        require(msg.sender == getProcessingServer(), "Only Processing server can call");
-
+    function liquidityOperationsEnteryPoint(bytes[] memory _operations) public onlyProcessingServer {
         for(uint i; i < _operations.length; i++) {
             (bool success,) = address(this).call(_operations[i]);
             require(success);
         }
+
+        
     }
 
     function increaseLiquidity(
@@ -29,7 +29,13 @@ abstract contract MSOProcessingServerEntryPoint is LiquidityManager  {
        _collectFees();
     }
 
-    function swapExactInputSingle(ISwapRouter.ExactInputSingleParams memory _params) public {
-        _swapExactInputSingle(_params);
+    function swapExactInputSingle(ISwapRouter.ExactInputSingleParams memory _params) public onlySelf returns(uint) {
+        return _swapExactInputSingle(_params);
     }
+
+    function swapExactOutputSingle(ISwapRouter.ExactOutputSingleParams memory _params) public onlySelf returns(uint) {
+        return _swapExactOutputSingle(_params);
+    }
+
+    // function
 }

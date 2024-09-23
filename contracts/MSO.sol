@@ -9,10 +9,12 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./SyntheticToken.sol";
 import "./libraries/StructsAndEnums.sol";
 import "./libraries/Events.sol";
 import "./MSOInitializer.sol";
+import './libraries/DecimalConversion.sol';
 
 abstract contract MSO is Events, StructsAndEnums {
     address public vaultProxy;
@@ -21,6 +23,9 @@ abstract contract MSO is Events, StructsAndEnums {
     address public usdcAddress;
     address public synthAddress;
     address public MSOInitializerAddress;
+
+    using SafeMath for uint256;
+    using DecimalConversion for uint256;
 
     INonfungiblePositionManager public positionManager;
     ISwapRouter public swapRouter;
@@ -39,7 +44,7 @@ abstract contract MSO is Events, StructsAndEnums {
 
     mapping(address => Balance) staked;
 
-    modifier onlyMSOServer() {
+    modifier onlyProcessingServer() {
         require(msg.sender == getProcessingServer(), "Not the owner");
         _;
     }
@@ -79,8 +84,8 @@ abstract contract MSO is Events, StructsAndEnums {
     function stake(uint _tsAmount, uint _usdcAmount) public {
         require(msoStage == MSOStage.INIT, "MSO stage error");
         require(
-            _tsAmount * minFactor <= _usdcAmount &&
-                _tsAmount * maxFactor >= _usdcAmount,
+            _tsAmount.mul(minFactor) <= _usdcAmount.from6to18dec() &&
+                _tsAmount.mul(maxFactor) >= _usdcAmount.from6to18dec(),
             "Not enough or too much USDC"
         );
         require(_tsAmount >= minTokenShares, "Not enough token shares");
@@ -117,7 +122,7 @@ abstract contract MSO is Events, StructsAndEnums {
     }
 
     function unstake() public {
-        // require(msoStage == MSOStage.CANCELED, "Too late");
+        require(msoStage == MSOStage.CANCELED, "Too late");
         uint usdcBalance = staked[msg.sender].usdc;
         uint tsBalance = staked[msg.sender].ts;
         require(
@@ -142,7 +147,7 @@ abstract contract MSO is Events, StructsAndEnums {
     }
 
     function launchMSO(
-        address _MSOServer,
+        address _ProcessingServer,
         SyntheticTokenConfig memory _tokenConfig,
         INonfungiblePositionManager.MintParams memory _params,
         bytes32 _r,
@@ -150,13 +155,13 @@ abstract contract MSO is Events, StructsAndEnums {
         uint8 _v
     ) public {
         require(
-            _MSOServer == getProcessingServer(),
+            _ProcessingServer == getProcessingServer(),
             "Must be signed by processing server"
         );
-        bytes32 hash = keccak256(abi.encode(_MSOServer, _tokenConfig, _params));
+        bytes32 hash = keccak256(abi.encode(_ProcessingServer, _tokenConfig, _params));
         address signer = ecrecover(hash, _v, _r, _s);
 
-        require(signer == _MSOServer, "Invalid inputs");
+        require(signer == _ProcessingServer, "Invalid inputs");
         require(vaultOwner == msg.sender, "Only vault owner can launch mso");
         _launchMSO(_tokenConfig, _params);
     }
@@ -169,7 +174,6 @@ abstract contract MSO is Events, StructsAndEnums {
         require(balance.usdc >= cap.soft, "Soft cap has not been reached");
 
         SyntheticToken token = new SyntheticToken(
-            address(this),
             _tokenConfig.name,
             _tokenConfig.symbol
         );
@@ -193,6 +197,8 @@ abstract contract MSO is Events, StructsAndEnums {
         liquidityBalance.synth = synthAmount;
         liquidityBalance.usdc = usdcAmount;
 
+        //The Liquidity pool contract address
+
         emit MSOLaunched(address(this), tsAddress, address(token), usdcAmount);
     }
 
@@ -214,6 +220,6 @@ abstract contract MSO is Events, StructsAndEnums {
     }
 
     function getProcessingServer() public view returns (address) {
-        return MSOInitializer(MSOInitializerAddress).getProcessingServer();
+        return MSOInitializer(MSOInitializerAddress).getOracleAddress();
     }
 }
