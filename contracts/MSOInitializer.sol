@@ -2,14 +2,13 @@
 pragma solidity =0.7.6;
 import "./libraries/Events.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token";
 
 contract MSOInitializer is Events {
     address OracleAddress;
     mapping(address => address) public deployedMSO;
 
     address[] oracleUpdateAccessList;
-    byte32 oracleUpdatePasscodeHash;
+    bytes32 oracleUpdatePasscodeHash;
 
     modifier onlyOracleAddress() {
         require(OracleAddress == msg.sender);
@@ -21,7 +20,7 @@ contract MSOInitializer is Events {
         _;
     }
 
-    constructor(address _OracleAddress, address[] _oracleUpdateAccessList, byte32 _oracleUpdatePasscodeHash) {
+    constructor(address _OracleAddress, address[] memory _oracleUpdateAccessList, bytes32 _oracleUpdatePasscodeHash) {
         oracleUpdateAccessList = _oracleUpdateAccessList;
         oracleUpdatePasscodeHash = _oracleUpdatePasscodeHash;
         OracleAddress = _OracleAddress;
@@ -54,7 +53,7 @@ contract MSOInitializer is Events {
         emit MSOInitialized(_vaultOwner, _vaultProxy, deployedMSO[_vaultProxy]);
     }
 
-    function updateOracleAddress(address _newServerAddress, string memory _passcode, byte32 _newPasscodeHash) public onlyOracleAddress {
+    function updateOracleAddress(address _newServerAddress, string memory _passcode, bytes32 _newPasscodeHash) public onlyOracleAddress {
         bool isAllowed;
         for(uint i; i<oracleUpdateAccessList.length; i++){
             if(msg.sender == oracleUpdateAccessList[i]){
@@ -65,7 +64,7 @@ contract MSOInitializer is Events {
 
         assert(isAllowed);
 
-        byte32 hash = keccak256(abi.encodePacked(_passcode));
+        bytes32 hash = keccak256(abi.encodePacked(_passcode));
         assert(hash == oracleUpdatePasscodeHash);
         oracleUpdatePasscodeHash = _newPasscodeHash;
         OracleAddress = _newServerAddress;

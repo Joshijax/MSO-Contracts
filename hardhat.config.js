@@ -4,14 +4,14 @@ require("@nomicfoundation/hardhat-toolbox");
 module.exports = {
   solidity: {
     compilers: [
+      {version: '0.7.6'},
       // {version: '0.8.20'},
-      {version: '0.7.6'}
     ],
     settings: {
-      optimizer: {
-        runs: 200,
-        enabled: true
-      }
+      // optimizer: {
+      //   runs: 200,
+      //   enabled: true
+      // }
     }
   },
 };

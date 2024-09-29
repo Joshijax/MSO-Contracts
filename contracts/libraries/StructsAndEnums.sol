@@ -1,36 +1,25 @@
 //SPDX-License-Identifier: MIT
 pragma solidity =0.7.6;
 
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+
 abstract contract StructsAndEnums {
-    struct Cap {
-        uint soft;
-        uint hard;
-    }
-    struct Balance {
-        uint usdc;
-        uint ts;
-    }
+    enum MSOStages {
+    BEFORE,
+    READY,
+    LAUNCHED
+}
 
-    enum MSOStage {
-        INIT,
-        LIQUIDITY,
-        CANCELED
-    }
+struct Balance {
+    uint token1;
+    uint token0;
+}
 
-    struct Deposit {
-        address owner;
-        uint128 liquidity;
-        address token0;
-        address token1;
-    }
+struct LaunchParams {
+    uint token2Amount;
+    string token2Name;
+    string token2Symbol;
+    INonfungiblePositionManager.MintParams liquidityParams;
+}
 
-    struct SyntheticTokenConfig {
-        string name;
-        string symbol;
-    }
-
-    struct InLiquidity {
-        uint usdc;
-        uint synth;
-    }
 }
