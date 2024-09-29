@@ -49,6 +49,7 @@ contract MSOInitializer is Events {
         address _vaultProxy
     ) public onlySelf {
         // -------- Depoly MSO ---------//
+        
         deployedMSO[_vaultProxy] = address(0);
         emit MSOInitialized(_vaultOwner, _vaultProxy, deployedMSO[_vaultProxy]);
     }

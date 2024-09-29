@@ -5,21 +5,31 @@ import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.s
 
 abstract contract StructsAndEnums {
     enum MSOStages {
-    BEFORE,
-    READY,
-    LAUNCHED
-}
+        BEFORE,
+        READY,
+        LAUNCHED
+    }
 
-struct Balance {
-    uint token1;
-    uint token0;
-}
+    struct Balance {
+        uint token1;
+        uint token0;
+    }
 
-struct LaunchParams {
-    uint token2Amount;
-    string token2Name;
-    string token2Symbol;
-    INonfungiblePositionManager.MintParams liquidityParams;
-}
+    struct LaunchParams {
+        uint token2Amount;
+        string token2Name;
+        string token2Symbol;
+        uint24 poolFee;
+        int24 tickLower;
+        int24 tickUpper;
+    }
 
+    struct MSOBalance {
+        uint token1;
+    }
+
+    struct CollatedFees {
+        uint token0;
+        uint token2;
+    }
 }
