@@ -40,7 +40,7 @@ interface IComptrollerLib {
     ) external returns (uint256[] memory payoutAmounts_);
 }
 
-abstract contract MSOInvestorInterface is StructsAndEnums, IERC721Receiver {
+abstract contract MSO is StructsAndEnums, IERC721Receiver {
     using SafeMath for uint256;
 
     ////////////////////////////
@@ -109,7 +109,7 @@ abstract contract MSOInvestorInterface is StructsAndEnums, IERC721Receiver {
      * @param _positionManager The address of the Uniswap v3 position manager contract.
      * @param _swapRouter The address of the Uniswap v3 swap router contract.
      * @param _minToken0 The minimum required amount of token0 for deposits.
-     * @param _lockPeriod The duration for which deposits are locked.
+     * @param _lockPeriod The duration for which deposits are locked before launch.
      * @param _token0Softcap The soft cap for token0 before the MSO can launch.
      */
     constructor(
