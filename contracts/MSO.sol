@@ -42,6 +42,7 @@ interface IComptrollerLib {
 
 abstract contract MSO is StructsAndEnums, IERC721Receiver {
     using SafeMath for uint256;
+    using SafeMath for uint128;
 
     ////////////////////////////
     /// Liquidity State  ///////
@@ -85,6 +86,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
     event Deposit(address investor, uint token0Amount, uint token1Amount);
     event Withdrawal(address investor, uint token0Amount);
     event Launched(uint token2Amount, uint token0Amount);
+    event TSClaim(uint token1Amount);
 
     //////////////////////////
     //// Modifiers ///////////
@@ -150,18 +152,18 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         // Transfer token0 and token1 from the investor to the contract
         _runTransfers(token1Amount, _token0Amount, msg.sender, a());
 
-        uint currentToken0Balance = token0Balance + _token0Amount;
+        uint currentToken0Balance = token0Balance.add(_token0Amount);
 
         // Update contract balances
-        token0Balance += _token0Amount;
-        token1Balance += token1Amount;
+        token0Balance = token0Balance.add(_token0Amount);
+        token1Balance = token1Balance.add(token1Amount);
 
         // Check if the soft cap has been reached
         if (token0Softcap <= currentToken0Balance) {
             stage = MSOStages.READY;
-            launchWindowExpiresAt =
-                block.timestamp +
-                launchWindowExpirationPeriod;
+            launchWindowExpiresAt = block.timestamp.add(
+                launchWindowExpirationPeriod
+            );
         }
 
         // Record investor's balance
@@ -191,8 +193,12 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         _runTransfers(token1Amount, _token0Amount, a(), msg.sender);
 
         // Update investor's balance
-        investorBalance[msg.sender].token1 -= token1Amount;
-        investorBalance[msg.sender].token0 -= _token0Amount;
+        investorBalance[msg.sender].token1 = investorBalance[msg.sender]
+            .token1
+            .sub(token1Amount);
+        investorBalance[msg.sender].token0 = investorBalance[msg.sender]
+            .token0
+            .sub(_token0Amount);
 
         emit Withdrawal(msg.sender, _token0Amount);
     }
@@ -211,7 +217,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         bytes32 _r,
         bytes32 _s,
         uint8 _v
-    ) public {
+    ) external {
         require(stage == MSOStages.READY, "MSO is not yet ready for launch");
         require(_oracle == getOracle(), "Must be signed by oracle");
 
@@ -232,7 +238,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
     /**
      * @notice Collects fees accrued from the Uniswap liquidity position and distributes them proportionally to investors.
      */
-    function collectFees() public onlyAfterLaunch {
+    function collectFees() external onlyAfterLaunch {
         // Collect fees from Uniswap position
         (uint token0Fees, uint token2Fees) = positionManager.collect(
             INonfungiblePositionManager.CollectParams({
@@ -243,31 +249,79 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
             })
         );
 
-        fees.token0 += token0Fees;
-        fees.token2 += token2Fees;
+        fees.token0 = fees.token0.add(token0Fees);
+        fees.token2 = fees.token2.add(token2Fees);
 
         require(fees.token0 != 0 && investorBalance[msg.sender].token0 != 0);
 
         // Calculate fees owed to the caller based on their share of token0
-        uint fee0 = ((investorBalance[msg.sender].token0 * fees.token0) /
-            token0Balance);
-        uint fee2 = ((investorBalance[msg.sender].token0 * fees.token2) /
-            token0Balance);
+        uint fee0 = (
+            investorBalance[msg.sender].token0.mul(fees.token0).div(
+                token0Balance
+            )
+        );
+        uint fee2 = (
+            investorBalance[msg.sender].token0.mul(fees.token2).div(
+                token0Balance
+            )
+        );
 
         // Deduct collected fees
-        fees.token0 -= fee0;
-        fees.token2 -= fee2;
+        fees.token0 = fees.token0.sub(fee0);
+        fees.token2 = fees.token0.sub(fee2);
 
         // Transfer fees to the caller
         _runTransfer(token0, fee0, a(), msg.sender);
         _runTransfer(token2, fee2, a(), msg.sender);
     }
 
+    function depositAfterLaunch(uint _maxToken0Amount) external {
+        (, uint token0Owed, uint token2Owed) = positionInfoManager.getPosition(
+            address(positionManager),
+            positionTokenId
+        );
+
+        uint maxToken2Amount = token2Owed.mul(_maxToken0Amount).div(token0Owed);
+
+        _runTransfers(
+            getToken1Amount(_maxToken0Amount),
+            _maxToken0Amount,
+            msg.sender,
+            a()
+        );
+
+        (uint amount0, uint amount2) = increaseLiquidity(
+            INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: positionTokenId,
+                amount0Desired: _maxToken0Amount,
+                amount1Desired: maxToken2Amount,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp
+            })
+        );
+
+        if (_maxToken0Amount > amount0) {
+            _runTransfers(
+                getToken1Amount(_maxToken0Amount.sub(amount0)),
+                _maxToken0Amount.sub(amount0),
+                a(),
+                msg.sender
+            );
+        }
+
+        if (maxToken2Amount > amount2) {
+            SyntheticToken(token2).burn(maxToken2Amount.sub(amount2));
+        }
+
+        Deposit(msg.sender, amount0, amount2);
+    }
+
     /**
      * @notice Withdraws a portion of the user's token0, token1, and token2 after the MSO has been launched.
      * @param _tokenPercentage The percentage of the tokens to withdraw.
      */
-    function withdrawAfterLaunch(uint _tokenPercentage) public {
+    function withdrawAfterLaunch(uint _tokenPercentage) external {
         uint token0Amount = investorBalance[msg.sender].token0;
         assert(token0Amount != 0);
 
@@ -286,33 +340,39 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
             INonfungiblePositionManager.DecreaseLiquidityParams({
                 tokenId: positionTokenId,
                 liquidity: liquidity,
-                amount0Min: (token0Owed / 100) * 90,
-                amount1Min: (token1Owed / 100) * 90,
+                amount0Min: token0Owed.mul(90).div(100),
+                amount1Min: token1Owed.mul(90).div(100),
                 deadline: block.timestamp
             })
         );
 
-        uint withdrawableToken0Amount = ((IERC20(token0).balanceOf(a()) -
-            fees.token0) * token0Amount) / token0Balance;
-        uint withdrawableToken2Amount = ((IERC20(token2).balanceOf(a()) -
-            fees.token2) * token0Amount) / token0Balance;
+        uint withdrawableToken0Amount = IERC20(token0)
+            .balanceOf(a())
+            .sub(fees.token0)
+            .mul(token0Amount)
+            .div(token0Balance);
+        uint withdrawableToken2Amount = IERC20(token2)
+            .balanceOf(a())
+            .sub(fees.token2)
+            .mul(token0Amount)
+            .div(token0Balance);
 
         // Transfer withdrawable tokens to the investor
         _runTransfer(
             token0,
-            (withdrawableToken0Amount * _tokenPercentage) / 100,
+            withdrawableToken0Amount.mul(_tokenPercentage).div(100),
             a(),
             msg.sender
         );
         _runTransfer(
             token1,
-            (investorBalance[msg.sender].token1 * _tokenPercentage) / 100,
+            investorBalance[msg.sender].token1.mul(_tokenPercentage).div(100),
             a(),
             msg.sender
         );
         _runTransfer(
             token2,
-            (withdrawableToken2Amount * _tokenPercentage) / 100,
+            withdrawableToken2Amount.mul(_tokenPercentage).div(100),
             a(),
             msg.sender
         );
@@ -323,10 +383,15 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
                 tokenId: positionTokenId,
                 amount0Desired: IERC20(token0).balanceOf(a()),
                 amount1Desired: IERC20(token2).balanceOf(a()),
-                amount0Min: (IERC20(token0).balanceOf(a()) * 90) / 100,
-                amount1Min: (IERC20(token2).balanceOf(a()) * 90) / 100,
+                amount0Min: IERC20(token0).balanceOf(a()).mul(90).div(100),
+                amount1Min: IERC20(token2).balanceOf(a()).mul(90).div(100),
                 deadline: block.timestamp
             })
+        );
+
+        emit Withdrawal(
+            msg.sender,
+            (withdrawableToken0Amount * _tokenPercentage) / 100
         );
     }
 
@@ -343,10 +408,9 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      * @param _token0Amount The amount of token0.
      * @return The corresponding amount of token1.
      */
-    function getToken1Amount(uint _token0Amount) public view returns (uint) {
+    function getToken1Amount(uint _token0Amount) internal view returns (uint) {
         return
-            (_token0Amount * 10 ** ERC20(token1).decimals()) /
-            10 ** ERC20(token0).decimals();
+            _token0Amount.mul(10 ** ERC20(token1).decimals()).div(10 ** ERC20(token0).decimals());
     }
 
     /**
@@ -404,8 +468,8 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
                 tickUpper: _launchParams.tickUpper,
                 amount0Desired: token0Balance,
                 amount1Desired: _launchParams.token2Amount,
-                amount0Min: (token0Balance * 90) / 100,
-                amount1Min: (_launchParams.token2Amount * 90) / 100,
+                amount0Min: token0Balance.mul(90).div(100),
+                amount1Min: _launchParams.token2Amount.mul(90).div(100),
                 recipient: address(this),
                 deadline: block.timestamp
             });
@@ -413,6 +477,10 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         (uint tokenId, , uint token2Amount, uint token0Amount) = positionManager
             .mint(params);
         positionTokenId = tokenId;
+
+        if (token2Amount < _launchParams.token2Amount) {
+            token2Contract.burn((_launchParams.token2Amount.sub(token2Amount)));
+        }
 
         stage = MSOStages.LAUNCHED;
 
@@ -423,7 +491,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      * @notice Synchronizes the prize by adjusting the amount of token1 in the contract.
      * @param _token1Amount The amount of token1 to adjust.
      */
-    function syncPrizeUp(uint _token1Amount) public onlyOracle {
+    function syncPrizeUp(uint _token1Amount) external onlyOracle {
         require(_token1Amount <= balance.token1, "Insufficient balance");
 
         // Redeem token0 from Enzyme by withdrawing token1
@@ -455,7 +523,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      * @notice Synchronizes the prize by adjusting the amount of token2 in the contract.
      * @param _token2Amount The amount of token2 to adjust.
      */
-    function syncPrizeDown(uint _token2Amount) public onlyOracle {
+    function syncPrizeDown(uint _token2Amount) external onlyOracle {
         // Mint new token2 tokens to adjust price
         SyntheticToken(token2).mint(a(), _token2Amount);
 
@@ -474,7 +542,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         );
 
         // Deposit token0 to Enzyme and receive token1 shares
-        balance.token1 += buySharesFromEnzyme(token0Amount, 0);
+        balance.token1 = balance.token1.add(buySharesFromEnzyme(token0Amount, 0));
     }
 
     /**
@@ -483,7 +551,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      */
     function increaseLiquidity(
         INonfungiblePositionManager.IncreaseLiquidityParams memory _params
-    ) internal {
+    ) internal returns (uint amount0, uint amount2) {
         TransferHelper.safeApprove(
             token0,
             address(positionManager),
@@ -496,7 +564,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         );
 
         // Increase liquidity for the position
-        positionManager.increaseLiquidity(_params);
+        (, amount0, amount2) = positionManager.increaseLiquidity(_params);
 
         // Reset approvals to zero for security
         TransferHelper.safeApprove(token0, address(positionManager), 0);
@@ -632,5 +700,11 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      */
     function a() public view returns (address) {
         return address(this);
+    }
+
+    function claimTSprofit() public onlyOracle {
+        _runTransfer(token1, balance.token1, a(), msg.sender);
+        emit TSClaim(balance.token1);
+        balance.token1 = 0;
     }
 }

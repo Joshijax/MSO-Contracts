@@ -4,11 +4,6 @@ pragma solidity ^0.7.6;
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 
 contract PositionInfoManager {
-    struct PositionInfo {
-        uint128 liquidity;
-        uint128 tokensOwed0;
-        uint128 tokensOwed1;
-    }
 
     function getPosition(
         address _manager,
