@@ -15,8 +15,11 @@ import "./MSOInitializer.sol";
 import "./SyntheticToken.sol";
 import "./interfaces/IComptrollerLib.sol";
 import "./interfaces/IVault.sol";
+import "./libraries/helpers.sol";
+import "./libraries/StructsAndEnums.sol";
+import "./MSOInitStage.sol";
 
-contract MSO is IERC721Receiver {
+contract MSO is IERC721Receiver, StructsAndEnums {
     using SafeMath for uint256;
     using SafeMath for uint128;
 
@@ -26,34 +29,28 @@ contract MSO is IERC721Receiver {
     INonfungiblePositionManager public positionManager;
     ISwapRouter public swapRouter;
     MSOBalance public balance;
-    CollatedFees fees;
+    CollatedFees public fees;
     address[] token1ToWithdraw = [token1];
     uint[] percentageToWithdraw = [100];
-    uint24 uniswapPoolFee;
-    uint positionTokenId;
+    uint24 public uniswapPoolFee = 10000;
+    uint public positionTokenId;
 
     ////////////////////////////
     //// Token State  //////////
     ////////////////////////////
-    address token0; // enzyme vault investment token
-    address token1; // enzyme vault token (TS)
-    address token2; // Synthetic token
+    address public token0; // enzyme vault investment token
+    address public token1; // enzyme vault token (TS)
+    address public token2; // Synthetic token
+    uint public minToken0;
 
-    address msoInitializer;
+    address public msoInitializer;
+    MSOInitStage public msoInitStage;
 
     ///////////////////////////
     //// Deposit State ////////
     ///////////////////////////
-    MSOStages stage = MSOStages.BEFORE;
-    uint minToken0;
-    uint lockPeriod;
-    uint launchWindowExpirationPeriod = 30 days;
-    uint launchWindowExpiresAt;
-    uint token0Softcap;
-    uint token0Balance;
-    uint token1Balance;
-
-    mapping(address => Balance) investorBalance;
+    uint public token0Balance;
+    uint public token1Balance;
 
     ///////////////////////////
     //// Events ///////////////
@@ -74,10 +71,6 @@ contract MSO is IERC721Receiver {
         require(msg.sender == a());
         _;
     }
-    modifier onlyAfterLaunch() {
-        require(stage == MSOStages.LAUNCHED);
-        _;
-    }
 
     /**
      * @notice Initializes the MSOInvestorInterface contract with the provided parameters.
@@ -86,8 +79,7 @@ contract MSO is IERC721Receiver {
      * @param _positionManager The address of the Uniswap v3 position manager contract.
      * @param _swapRouter The address of the Uniswap v3 swap router contract.
      * @param _minToken0 The minimum required amount of token0 for deposits.
-     * @param _lockPeriod The duration for which deposits are locked before launch.
-     * @param _token0Softcap The soft cap for token0 before the MSO can launch.
+     * @param _launchParams The parameters required for the launch.
      */
     constructor(
         address _token0,
@@ -95,118 +87,23 @@ contract MSO is IERC721Receiver {
         address _positionManager,
         address _swapRouter,
         uint _minToken0,
-        uint _lockPeriod,
-        uint _token0Softcap
+        LaunchParams memory _launchParams
     ) {
-        require(IVault(_token1).isTrackedAsset(_token0));
-
-        // Initialize state variables
-        msoInitializer = msg.sender;
         token0 = _token0;
         token1 = _token1;
-
         positionManager = INonfungiblePositionManager(_positionManager);
         swapRouter = ISwapRouter(_swapRouter);
-
         minToken0 = _minToken0;
-        lockPeriod = _lockPeriod;
-        token0Softcap = _token0Softcap;
-    }
 
-    /**
-     * @notice Deposits a specified amount of token0 into the contract.
-     * @param _token0Amount The amount of token0 to deposit.
-     */
-    function deposit(uint _token0Amount) public {
-        require(_token0Amount >= minToken0);
-        uint token1Amount = getToken1Amount(_token0Amount);
+        msoInitStage = MSOInitStage(msg.sender);
 
-        // Transfer token0 and token1 from the investor to the contract
-        _runTransfers(token1Amount, _token0Amount, msg.sender, a());
-
-        uint currentToken0Balance = token0Balance.add(_token0Amount);
-
-        // Update contract balances
-        token0Balance = token0Balance.add(_token0Amount);
-        token1Balance = token1Balance.add(token1Amount);
-
-        // Check if the soft cap has been reached
-        if (token0Softcap <= currentToken0Balance) {
-            stage = MSOStages.READY;
-            launchWindowExpiresAt = block.timestamp.add(
-                launchWindowExpirationPeriod
-            );
-        }
-
-        // Record investor's balance
-        investorBalance[msg.sender].token0 = _token0Amount;
-        investorBalance[msg.sender].token1 = token1Amount;
-
-        emit Deposit(msg.sender, _token0Amount, token1Amount);
-    }
-
-    /**
-     * @notice Withdraws a specified amount of token0 from the contract.
-     * @param _token0Amount The amount of token0 to withdraw.
-     */
-    function withdraw(uint _token0Amount) public {
-        // Ensure withdrawals can be made based on the stage and timing
-        require(
-            stage == MSOStages.BEFORE ||
-                (stage == MSOStages.READY &&
-                    block.timestamp >= launchWindowExpiresAt)
-        );
-        assert(investorBalance[msg.sender].token0 >= _token0Amount);
-
-        uint token1Amount = getToken1Amount(_token0Amount);
-
-        // Transfer token0 and token1 back to the investor
-        _runTransfers(token1Amount, _token0Amount, a(), msg.sender);
-
-        // Update investor's balance
-        investorBalance[msg.sender].token1 = investorBalance[msg.sender]
-            .token1
-            .sub(token1Amount);
-        investorBalance[msg.sender].token0 = investorBalance[msg.sender]
-            .token0
-            .sub(_token0Amount);
-
-        emit Withdrawal(msg.sender, _token0Amount);
-    }
-
-    /**
-     * @notice Launches the MSO, deploying the synthetic token and creating a liquidity position on Uniswap.
-     * @param _oracle The oracle address responsible for signing the launch.
-     * @param _launchParams The parameters required for the launch.
-     * @param _r The 'r' component of the signature.
-     * @param _s The 's' component of the signature.
-     * @param _v The 'v' component of the signature.
-     */
-    function launch(
-        address _oracle,
-        LaunchParams memory _launchParams,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
-    ) external {
-        require(stage == MSOStages.READY);
-        require(_oracle == getOracle());
-
-        // Verify signature
-        bytes32 hash = keccak256(abi.encode(_oracle, _launchParams));
-        address signer = ecrecover(hash, _v, _r, _s);
-
-        require(signer == _oracle);
-        require(getVaultOwner() == msg.sender);
-
-        // Internal function to perform the launch logic
         _launch(_launchParams);
     }
 
     /**
      * @notice Collects fees accrued from the Uniswap liquidity position and distributes them proportionally to investors.
      */
-    function collectFees() external onlyAfterLaunch {
+    function collectFees() external {
         // Collect fees from Uniswap position
         (uint token0Fees, uint token2Fees) = positionManager.collect(
             INonfungiblePositionManager.CollectParams({
@@ -220,16 +117,16 @@ contract MSO is IERC721Receiver {
         fees.token0 = fees.token0.add(token0Fees);
         fees.token2 = fees.token2.add(token2Fees);
 
-        require(fees.token0 != 0 && investorBalance[msg.sender].token0 != 0);
+        require(fees.token0 != 0 && getInvestorsBalance(msg.sender).token0 != 0);
 
         // Calculate fees owed to the caller based on their share of token0
         uint fee0 = (
-            investorBalance[msg.sender].token0.mul(fees.token0).div(
+            getInvestorsBalance(msg.sender).token0.mul(fees.token0).div(
                 token0Balance
             )
         );
         uint fee2 = (
-            investorBalance[msg.sender].token0.mul(fees.token2).div(
+            getInvestorsBalance(msg.sender).token0.mul(fees.token2).div(
                 token0Balance
             )
         );
@@ -239,8 +136,8 @@ contract MSO is IERC721Receiver {
         fees.token2 = fees.token0.sub(fee2);
 
         // Transfer fees to the caller
-        _runTransfer(token0, fee0, a(), msg.sender);
-        _runTransfer(token2, fee2, a(), msg.sender);
+        Helpers.runTransfer(token0, fee0, a(), msg.sender);
+        Helpers.runTransfer(token2, fee2, a(), msg.sender);
     }
 
     function depositAfterLaunch(uint _maxToken0Amount) external {
@@ -251,7 +148,8 @@ contract MSO is IERC721Receiver {
 
         uint maxToken2Amount = token2Owed.mul(_maxToken0Amount).div(token0Owed);
 
-        _runTransfers(
+        Helpers.runTransfers(
+            token1, token0,
             getToken1Amount(_maxToken0Amount),
             _maxToken0Amount,
             msg.sender,
@@ -270,7 +168,8 @@ contract MSO is IERC721Receiver {
         );
 
         if (_maxToken0Amount > amount0) {
-            _runTransfers(
+            Helpers.runTransfers(
+                token1, token0,
                 getToken1Amount(_maxToken0Amount.sub(amount0)),
                 _maxToken0Amount.sub(amount0),
                 a(),
@@ -290,7 +189,7 @@ contract MSO is IERC721Receiver {
      * @param _tokenPercentage The percentage of the tokens to withdraw.
      */
     function withdrawAfterLaunch(uint _tokenPercentage) external {
-        uint token0Amount = investorBalance[msg.sender].token0;
+        uint token0Amount = getInvestorsBalance(msg.sender).token0;
         assert(token0Amount != 0);
 
         // Get liquidity info for the position
@@ -326,19 +225,19 @@ contract MSO is IERC721Receiver {
             .div(token0Balance);
 
         // Transfer withdrawable tokens to the investor
-        _runTransfer(
+        Helpers.runTransfer(
             token0,
             withdrawableToken0Amount.mul(_tokenPercentage).div(100),
             a(),
             msg.sender
         );
-        _runTransfer(
+        Helpers.runTransfer(
             token1,
-            investorBalance[msg.sender].token1.mul(_tokenPercentage).div(100),
+            getInvestorsBalance(msg.sender).token1.mul(_tokenPercentage).div(100),
             a(),
             msg.sender
         );
-        _runTransfer(
+        Helpers.runTransfer(
             token2,
             withdrawableToken2Amount.mul(_tokenPercentage).div(100),
             a(),
@@ -451,8 +350,6 @@ contract MSO is IERC721Receiver {
         if (token2Amount < _launchParams.token2Amount) {
             token2Contract.burn((_launchParams.token2Amount.sub(token2Amount)));
         }
-
-        stage = MSOStages.LAUNCHED;
 
         emit Launched(token2Amount, token0Amount);
     }
@@ -619,39 +516,6 @@ contract MSO is IERC721Receiver {
     }
 
     /**
-     * @notice Transfers specified amounts of token0 and token1 between addresses.
-     * @param _token1Amount The amount of token1 to transfer.
-     * @param _token0Amount The amount of token0 to transfer.
-     * @param _from The address to transfer from.
-     * @param _to The address to transfer to.
-     */
-    function _runTransfers(
-        uint _token1Amount,
-        uint _token0Amount,
-        address _from,
-        address _to
-    ) internal {
-        require(IERC20(token0).transferFrom(_from, _to, _token0Amount));
-        require(IERC20(token1).transferFrom(_from, _to, _token1Amount));
-    }
-
-    /**
-     * @notice Transfers a specified amount of a token between addresses.
-     * @param _token The address of the token to transfer.
-     * @param _amount The amount of tokens to transfer.
-     * @param _from The address to transfer from.
-     * @param _to The address to transfer to.
-     */
-    function _runTransfer(
-        address _token,
-        uint _amount,
-        address _from,
-        address _to
-    ) internal {
-        require(IERC20(_token).transferFrom(_from, _to, _amount));
-    }
-
-    /**
      * @notice Returns the contract's address.
      * @return The address of the contract.
      */
@@ -660,36 +524,12 @@ contract MSO is IERC721Receiver {
     }
 
     function claimTSprofit() public onlyOracle {
-        _runTransfer(token1, balance.token1, a(), msg.sender);
+        Helpers.runTransfer(token1, balance.token1, a(), msg.sender);
         emit TSClaim(balance.token1);
         balance.token1 = 0;
     }
-}
-enum MSOStages {
-    BEFORE,
-    READY,
-    LAUNCHED
-}
 
-struct Balance {
-    uint token1;
-    uint token0;
-}
-
-struct LaunchParams {
-    uint token2Amount;
-    string token2Name;
-    string token2Symbol;
-    uint24 poolFee;
-    int24 tickLower;
-    int24 tickUpper;
-}
-
-struct MSOBalance {
-    uint token1;
-}
-
-struct CollatedFees {
-    uint token0;
-    uint token2;
+    function getInvestorsBalance(address _investor) internal view returns(Balance memory){
+        return msoInitStage.getInvestmentBalance(_investor);
+    }
 }

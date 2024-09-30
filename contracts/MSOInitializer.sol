@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.6;
 
-import "./MSO.sol";
+import "./MSOInitStage.sol";
 import "./interfaces/IComptrollerLib.sol";
 import "./interfaces/IVault.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
@@ -151,7 +151,7 @@ contract MSOInitializer {
         address _vaultOwner
     ) internal {
         // -------- Deploy MSO ---------//
-        MSO mso = new MSO(
+        MSOInitStage mso = new MSOInitStage(
             _investmentToken,
             _vaultToken,
             msoConfig.positionManager,
