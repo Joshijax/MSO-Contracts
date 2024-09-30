@@ -1,8 +1,7 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity =0.7.6;
 pragma abicoder v2;
 
-import "./libraries/DecimalConversion.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
@@ -12,35 +11,12 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "./PositionInfoManager.sol";
-import "./libraries/StructsAndEnums.sol";
 import "./MSOInitializer.sol";
 import "./SyntheticToken.sol";
+import "./interfaces/IComptrollerLib.sol";
+import "./interfaces/IVault.sol";
 
-interface IVault {
-    function getAccessor() external view returns (address);
-
-    function getOwner() external view returns (address);
-
-    function isTrackedAsset(address _asset) external view returns (bool);
-}
-
-interface IComptrollerLib {
-    function buyShares(
-        address _buyer,
-        uint256 _investmentAmount,
-        uint256 _minSharesQuantity
-    ) external returns (uint256 sharesReceived);
-
-    function redeemSharesForSpecificAssets(
-        address _recipient,
-        uint256 _sharesQuantity,
-        address[] calldata _payoutAssets,
-        uint256[] calldata _payoutAssetPercentages
-    ) external returns (uint256[] memory payoutAmounts_);
-}
-
-abstract contract MSO is StructsAndEnums, IERC721Receiver {
+contract MSO is IERC721Receiver {
     using SafeMath for uint256;
     using SafeMath for uint128;
 
@@ -53,7 +29,6 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
     CollatedFees fees;
     address[] token1ToWithdraw = [token1];
     uint[] percentageToWithdraw = [100];
-    PositionInfoManager positionInfoManager;
     uint24 uniswapPoolFee;
     uint positionTokenId;
 
@@ -100,7 +75,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         _;
     }
     modifier onlyAfterLaunch() {
-        require(stage == MSOStages.LAUNCHED, "MSO has not launched");
+        require(stage == MSOStages.LAUNCHED);
         _;
     }
 
@@ -123,10 +98,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         uint _lockPeriod,
         uint _token0Softcap
     ) {
-        require(
-            IVault(_token1).isTrackedAsset(_token0),
-            "Asset not tracked by vault"
-        );
+        require(IVault(_token1).isTrackedAsset(_token0));
 
         // Initialize state variables
         msoInitializer = msg.sender;
@@ -146,7 +118,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      * @param _token0Amount The amount of token0 to deposit.
      */
     function deposit(uint _token0Amount) public {
-        require(_token0Amount >= minToken0, "Token0 is less than threshold");
+        require(_token0Amount >= minToken0);
         uint token1Amount = getToken1Amount(_token0Amount);
 
         // Transfer token0 and token1 from the investor to the contract
@@ -182,8 +154,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         require(
             stage == MSOStages.BEFORE ||
                 (stage == MSOStages.READY &&
-                    block.timestamp >= launchWindowExpiresAt),
-            "Can't withdraw funds at the moment"
+                    block.timestamp >= launchWindowExpiresAt)
         );
         assert(investorBalance[msg.sender].token0 >= _token0Amount);
 
@@ -218,18 +189,15 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         bytes32 _s,
         uint8 _v
     ) external {
-        require(stage == MSOStages.READY, "MSO is not yet ready for launch");
-        require(_oracle == getOracle(), "Must be signed by oracle");
+        require(stage == MSOStages.READY);
+        require(_oracle == getOracle());
 
         // Verify signature
         bytes32 hash = keccak256(abi.encode(_oracle, _launchParams));
         address signer = ecrecover(hash, _v, _r, _s);
 
-        require(signer == _oracle, "Invalid inputs");
-        require(
-            getVaultOwner() == msg.sender,
-            "Only vault owner can launch MSO"
-        );
+        require(signer == _oracle);
+        require(getVaultOwner() == msg.sender);
 
         // Internal function to perform the launch logic
         _launch(_launchParams);
@@ -276,7 +244,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
     }
 
     function depositAfterLaunch(uint _maxToken0Amount) external {
-        (, uint token0Owed, uint token2Owed) = positionInfoManager.getPosition(
+        (, uint token0Owed, uint token2Owed) = MSOInitializer(msoInitializer).getPosition(
             address(positionManager),
             positionTokenId
         );
@@ -330,7 +298,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
             uint128 liquidity,
             uint128 token0Owed,
             uint128 token1Owed
-        ) = positionInfoManager.getPosition(
+        ) = MSOInitializer(msoInitializer).getPosition(
                 address(positionManager),
                 positionTokenId
             );
@@ -410,7 +378,9 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      */
     function getToken1Amount(uint _token0Amount) internal view returns (uint) {
         return
-            _token0Amount.mul(10 ** ERC20(token1).decimals()).div(10 ** ERC20(token0).decimals());
+            _token0Amount.mul(10 ** ERC20(token1).decimals()).div(
+                10 ** ERC20(token0).decimals()
+            );
     }
 
     /**
@@ -492,7 +462,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
      * @param _token1Amount The amount of token1 to adjust.
      */
     function syncPrizeUp(uint _token1Amount) external onlyOracle {
-        require(_token1Amount <= balance.token1, "Insufficient balance");
+        require(_token1Amount <= balance.token1);
 
         // Redeem token0 from Enzyme by withdrawing token1
         uint token0Amount = redeemInvestmentFromEnzyme(
@@ -542,7 +512,9 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         );
 
         // Deposit token0 to Enzyme and receive token1 shares
-        balance.token1 = balance.token1.add(buySharesFromEnzyme(token0Amount, 0));
+        balance.token1 = balance.token1.add(
+            buySharesFromEnzyme(token0Amount, 0)
+        );
     }
 
     /**
@@ -602,10 +574,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         uint _minToken1Quantity
     ) internal returns (uint) {
         address comptrollerAddress = IVault(token1).getAccessor();
-        require(
-            IERC20(token0).approve(comptrollerAddress, _token0Amount),
-            "Approval failed"
-        );
+        require(IERC20(token0).approve(comptrollerAddress, _token0Amount));
 
         // Buy shares from the Enzyme vault
         return
@@ -629,10 +598,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         uint[] memory _percentages
     ) internal returns (uint) {
         address comptrollerAddress = IVault(token1).getAccessor();
-        require(
-            IERC20(token1).approve(comptrollerAddress, _token1Amount),
-            "Approval failed"
-        );
+        require(IERC20(token1).approve(comptrollerAddress, _token1Amount));
 
         // Redeem specific assets from Enzyme based on shares
         return
@@ -665,14 +631,8 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         address _from,
         address _to
     ) internal {
-        require(
-            IERC20(token0).transferFrom(_from, _to, _token0Amount),
-            "Failed to transfer token0"
-        );
-        require(
-            IERC20(token1).transferFrom(_from, _to, _token1Amount),
-            "Failed to transfer token1"
-        );
+        require(IERC20(token0).transferFrom(_from, _to, _token0Amount));
+        require(IERC20(token1).transferFrom(_from, _to, _token1Amount));
     }
 
     /**
@@ -688,10 +648,7 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         address _from,
         address _to
     ) internal {
-        require(
-            IERC20(_token).transferFrom(_from, _to, _amount),
-            "Failed to transfer tokens"
-        );
+        require(IERC20(_token).transferFrom(_from, _to, _amount));
     }
 
     /**
@@ -707,4 +664,32 @@ abstract contract MSO is StructsAndEnums, IERC721Receiver {
         emit TSClaim(balance.token1);
         balance.token1 = 0;
     }
+}
+enum MSOStages {
+    BEFORE,
+    READY,
+    LAUNCHED
+}
+
+struct Balance {
+    uint token1;
+    uint token0;
+}
+
+struct LaunchParams {
+    uint token2Amount;
+    string token2Name;
+    string token2Symbol;
+    uint24 poolFee;
+    int24 tickLower;
+    int24 tickUpper;
+}
+
+struct MSOBalance {
+    uint token1;
+}
+
+struct CollatedFees {
+    uint token0;
+    uint token2;
 }
