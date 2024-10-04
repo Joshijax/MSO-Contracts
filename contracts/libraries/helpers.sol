@@ -2,9 +2,13 @@
 pragma solidity ^0.7.6;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+
 import "../interfaces/IVault.sol";
 
 library Helpers {
+    using SafeMath for uint;
      /**
      * @notice Transfers specified amounts of token0 and token1 between addresses.
      * @param _token1Amount The amount of token1 to transfer.
@@ -47,5 +51,18 @@ library Helpers {
      */
     function getVaultOwner(address _token1) external view returns (address) {
         return IVault(_token1).getOwner();
+    }
+
+
+    /**
+     * @notice Gets the corresponding token1 amount based on a specified token0 amount.
+     * @param _token0Amount The amount of token0.
+     * @return The corresponding amount of token1.
+     */
+    function getToken1Amount(uint _token0Amount, address _token1, address _token0) internal view returns (uint) {
+        return
+            _token0Amount.mul(10 ** ERC20(_token1).decimals()).div(
+                10 ** ERC20(_token0).decimals()
+            );
     }
 }

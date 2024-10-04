@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract SyntheticToken is ERC20, ERC20Burnable, Ownable {
-    constructor(string memory _name, string memory _symbol)
+    constructor(string memory _name, string memory _symbol, address _owner)
         ERC20(_name, _symbol)
         Ownable()
     {

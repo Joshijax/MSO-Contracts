@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.6;
 
-import "./MSOInitStage.sol";
 import "./interfaces/IComptrollerLib.sol";
 import "./interfaces/IVault.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "./MSO.sol";
 
-// Struct to hold the configuration parameters for the MSO
+// Struct to hold the configuration parameters for the MSO //
 struct MSOConfig {
     address positionManager; // Address of Uniswap v3 position manager
     address swapRouter; // Address of Uniswap v3 swap router
+    address msoLauncher;
+    address msoDepositAndWithdraw;
+    address msoFeeCollector;
+    address msoPriceSync;
     uint minInvestmentToken; // Minimum investment amount
     uint lockPeriod; // Lock period before launch
     uint investmentSoftCap; // Minimum token0 amount required before launch
@@ -22,6 +26,7 @@ contract MSOInitializer {
 
     address[] oracleUpdateAccessList; // List of addresses authorized to update the oracle
     bytes32 oracleUpdatePasscodeHash; // Hash of the passcode required for oracle updates
+    address msoImplementation; // The address to the MSO implementation;
 
     event MSOInitialized(
         address indexed vaultOwner,
@@ -61,6 +66,10 @@ contract MSOInitializer {
         address _OracleAddress,
         address _positionManager,
         address _swapRouter,
+        address _msoLauncher,
+        address _msoDepositAndWithdraw,
+        address _msoFeeCollector,
+        address _msoPriceSync,
         uint _minInvestmentToken,
         uint _lockPeriod,
         uint _investmentSoftCap,
@@ -76,10 +85,14 @@ contract MSOInitializer {
         // Set the initial oracle address
         OracleAddress = _OracleAddress;
 
-        // Set the initial MSO configuration
+        // Set the initial MSO configurations
         msoConfig = MSOConfig(
             _positionManager,
             _swapRouter,
+            _msoLauncher,
+            _msoDepositAndWithdraw,
+            _msoFeeCollector,
+            _msoPriceSync,
             _minInvestmentToken,
             _lockPeriod,
             _investmentSoftCap
@@ -151,14 +164,19 @@ contract MSOInitializer {
         address _vaultOwner
     ) internal {
         // -------- Deploy MSO ---------//
-        MSOInitStage mso = new MSOInitStage(
+        MSO mso = new MSO(
             _investmentToken,
             _vaultToken,
             msoConfig.positionManager,
             msoConfig.swapRouter,
+            msoConfig.msoLauncher,
+            msoConfig.msoDepositAndWithdraw,
+            msoConfig.msoFeeCollector,
+            msoConfig.msoPriceSync,
             msoConfig.minInvestmentToken,
             msoConfig.lockPeriod,
-            msoConfig.investmentSoftCap
+            msoConfig.investmentSoftCap,
+            address(this)
         );
 
         // Store deployed MSO address in the mapping
@@ -216,6 +234,10 @@ contract MSOInitializer {
     function updateMSOConfig(
         address _positionManager,
         address _swapRouter,
+         address _msoLauncher,
+        address _msoDepositAndWithdraw,
+        address _msoFeeCollector,
+        address _msoPriceSync,
         uint _minInvestmentToken,
         uint _lockPeriod,
         uint _investmentSoftCap
@@ -224,6 +246,10 @@ contract MSOInitializer {
         msoConfig = MSOConfig(
             _positionManager,
             _swapRouter,
+            _msoLauncher,
+            _msoDepositAndWithdraw,
+            _msoFeeCollector,
+            _msoPriceSync,
             _minInvestmentToken,
             _lockPeriod,
             _investmentSoftCap
@@ -243,14 +269,12 @@ contract MSOInitializer {
      * @notice Retrieves the liquidity and token amounts associated with a given Uniswap v3 position.
      * @dev Uses the `INonfungiblePositionManager` interface to fetch details of a specific position token ID.
      * The function extracts and returns the liquidity, token0 amount, and token1 amount of the position.
-     * @param _manager The address of the Uniswap v3 position manager contract.
      * @param _positonTokenId The ID of the position token for which the details are being retrieved.
      * @return liquidity The amount of liquidity provided in the Uniswap position.
      * @return token0Amount The amount of token0 held in the position.
      * @return token1Amount The amount of token1 held in the position.
      */
     function getPosition(
-        address _manager,
         uint _positonTokenId
     )
         external
@@ -258,7 +282,7 @@ contract MSOInitializer {
         returns (uint128 liquidity, uint128 token0Amount, uint128 token1Amount)
     {
         INonfungiblePositionManager positionManager = INonfungiblePositionManager(
-                _manager
+                msoConfig.positionManager
             );
         (
             ,
